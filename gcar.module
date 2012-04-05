@@ -1,0 +1,128 @@
+<?php
+ /*
+  * This is a TEST module.
+  * Please use only as a test case for returning items
+  * for Drupal Commerce.
+  *
+  */
+
+function gcar_form_alter(&$form, $form_state, $form_id){
+
+ if($form_id == 'commerce_order_ui_order_form'){
+     if($form_state['build_info']['args']['0']->status == 'canceled'){
+
+
+$id = variable_get('googleanalytics_account', '');
+
+$script = 'var _gaq = _gaq || [];';
+
+$country = $form['commerce_customer_shipping']['und']['profiles']['0']['customer_profile_shipping']['commerce_customer_address']['und']['0']['country']['#default_value'];
+$state = $form['commerce_customer_shipping']['und']['profiles']['0']['customer_profile_shipping']['commerce_customer_address']['und']['0']['administrative_area']['#default_value'];
+$city = $form['commerce_customer_shipping']['und']['profiles']['0']['customer_profile_shipping']['commerce_customer_address']['und']['0']['locality']['#default_value'];
+
+$base =  $form['commerce_order_total']['und']['0']['data']['#default_value']['components']['0']['price']['amount'];
+$tax  =  $form['commerce_order_total']['und']['0']['data']['#default_value']['components']['1']['price']['amount'];
+$ship =  $form['commerce_order_total']['und']['0']['data']['#default_value']['components']['2']['price']['amount'];
+
+   $total = round($base + $tax + $ship);
+    $order = arg(3);
+      foreach($form['commerce_order_total']['und']['0']['data']['#default_value']['components'] as $item_array){
+            $item  = $item_array['name'];
+            $price = round($item_array['price']['amount']);
+              if(preg_match('/ship/', $item)){
+                 $shipping = $price/100;
+                }
+              if(preg_match('/tax/', $item)){
+                 $tax = $price/100;
+                }
+              if(preg_match('/base_price/', $item)){
+                 $base_price = $price/100;
+                    }
+      // Coupon isn't actually computed in the return, but
+      // is here for my own auditing.
+              if(preg_match('/coupon/', $item)){
+                 $coupon = $price/100;
+                    }
+       }
+    dpm("shipping: " . $shipping);
+    dpm("tax: " . $tax);
+    dpm("base_price: " . $base_price);
+
+  $items = array();
+  $order_items = array();
+  array_push($order_items,"tax",1,0,0,0,"-".$tax);
+  array_push($order_items, $tax_array);
+  array_push($items, $order_items);
+
+     foreach($form['commerce_line_items']['und']['line_items'] as $item_array){
+        $order_items  = array();
+  array_push($order_items, $item_array['line_item']['#value']->line_item_label);
+  array_push($order_items,  number_format($item_array['line_item']['#value']->quantity),0,'.','');
+  array_push($order_items, $item_array['line_item']['#value']->commerce_unit_price['und']['0']['amount']/=100);
+  array_push($items, $order_items);
+       }
+
+  dpm($items);
+
+  $site_detail = array(
+     drupal_json_encode($id),
+  );
+
+  $transaction = array(
+   '"' . $order . '"',
+   drupal_json_encode(variable_get('site_name', 'Drupal Commerce')),
+   '"' . number_format($base_price,2) . '"',
+   '"-' . number_format($tax,2) . '"',
+   '"' . number_format($shipping,2) . '"',
+   drupal_json_encode($city),
+   drupal_json_encode($state),
+   drupal_json_encode($country),
+   );
+  foreach($items as $item_array){
+ // again, coupons are not a part of the return love
+   if(!preg_match('/Coupon/', $item_array[0])){
+      $args = array(
+        '"' . $order . '"',
+        drupal_json_encode($item_array[0]),
+        drupal_json_encode(''),
+        drupal_json_encode(''),
+        '"' . $item_array[5] . '"',
+        '"-' . $item_array[1] . '"',
+      );
+       $script_item .= '_gaq.push(["_addItem", '. implode(', ', $args) .']);';
+      }
+     }
+      // Add the transaction line to the JS.
+       $script .= '_gaq.push(["_setAccount", '. implode(', ', $site_detail) .']);';
+
+      // Add the transaction line to the JS.
+       $script .= '_gaq.push(["_trackPageview"]);';
+
+      // Add the transaction line to the JS.
+       $script .= '_gaq.push(["_addTrans", '. implode(', ', $transaction) .']);';
+
+      // Allow modules to alter the item arguments.
+       drupal_alter('commerce_google_analytics_item', $item, $line_item, $transaction, $order);
+
+      // Add the item line to the JS.
+       //$script .= '_gaq.push(["_addItem", '. implode(', ', $args) .']);';
+       $script .= $script_item;
+
+      // Add the function to submit the transaction to GA.
+       $script .= '_gaq.push(["_trackTrans"]);';
+
+    $script .= "(function() 
+                {var ga = document.createElement(\"script\");
+                ga.type = \"text/javascript\"; 
+                ga.async = true;
+                ga.src = (\"https:\" == document.location.protocol ? \"https://ssl\" : \"http://www\") + \".google-analytics.com/ga.js\";
+                var s = document.getElementsByTagName(\"script\")[0];
+                        s.parentNode.insertBefore(ga, s);
+                })();";
+
+   drupal_add_js($script, array('type' => 'inline', 'scope' => 'footer', 'preprocess' => FALSE));
+
+    } 
+  }
+}
+

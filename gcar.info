@@ -1,0 +1,4 @@
+name = "GCAR"
+description = "Google Commerce Analytics Returning Items"
+core = 7.x
+package = Google Commerce TEST
